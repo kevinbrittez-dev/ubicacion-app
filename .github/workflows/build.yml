@@ -20,11 +20,9 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Set Flutter root env
+      - name: Create local.properties
         run: |
-          FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
-          echo "FLUTTER_ROOT=$FLUTTER_SDK" >> $GITHUB_ENV
-          echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
 
       - run: flutter pub get
