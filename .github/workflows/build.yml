@@ -18,18 +18,22 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
-
-      - name: Get Flutter SDK path
-        run: echo "FLUTTER_SDK=$(dirname $(dirname $(which flutter)))" >> $GITHUB_ENV
+          channel: 'stable'
 
       - name: Create local.properties
         run: |
-          echo "flutter.sdk=${{ env.FLUTTER_SDK }}" > android/local.properties
+          FLUTTER_PATH=$(which flutter)
+          FLUTTER_SDK=$(dirname $(dirname $FLUTTER_PATH))
+          echo "Flutter SDK path: $FLUTTER_SDK"
+          echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+          cat android/local.properties
 
-      - run: flutter pub get
+      - name: Flutter pub get
+        run: flutter pub get
 
-      - run: flutter build apk --release
+      - name: Build APK
+        run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
