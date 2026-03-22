@@ -24,6 +24,23 @@ jobs:
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
 
+      - name: Generate launcher icons
+        run: |
+          for size in 48 72 96 144 192; do
+            case $size in
+              48)  dir="mipmap-mdpi";;
+              72)  dir="mipmap-hdpi";;
+              96)  dir="mipmap-xhdpi";;
+              144) dir="mipmap-xxhdpi";;
+              192) dir="mipmap-xxxhdpi";;
+            esac
+            mkdir -p android/app/src/main/res/$dir
+            convert -size ${size}x${size} xc:#2196F3 \
+              -fill white -font DejaVu-Sans-Bold -pointsize $((size/3)) \
+              -gravity center -annotate 0 "U" \
+              android/app/src/main/res/$dir/ic_launcher.png
+          done
+
       - run: flutter pub get
 
       - run: flutter build apk --release
