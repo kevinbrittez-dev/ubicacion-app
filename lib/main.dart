@@ -431,7 +431,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
         'ubicacion_automatica',
         frequency: const Duration(minutes: 15),
         constraints: Constraints(networkType: NetworkType.connected),
-        existingWorkPolicy: ExistingWorkPolicy.replace,
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
       );
       await mostrarNotif(
         'Horario guardado',
