@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.ubicacion.app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -23,9 +23,9 @@ android {
     defaultConfig {
         applicationId = "com.ubicacion.app"
         minSdk = 21
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
     }
 
     buildTypes {
