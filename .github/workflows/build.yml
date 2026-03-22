@@ -26,6 +26,7 @@ jobs:
 
       - name: Generate launcher icons
         run: |
+          sudo apt-get install -y imagemagick
           for size in 48 72 96 144 192; do
             case $size in
               48)  dir="mipmap-mdpi";;
@@ -36,8 +37,6 @@ jobs:
             esac
             mkdir -p android/app/src/main/res/$dir
             convert -size ${size}x${size} xc:#2196F3 \
-              -fill white -font DejaVu-Sans-Bold -pointsize $((size/3)) \
-              -gravity center -annotate 0 "U" \
               android/app/src/main/res/$dir/ic_launcher.png
           done
 
