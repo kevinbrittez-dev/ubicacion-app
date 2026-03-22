@@ -20,20 +20,16 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Create local.properties
+      - name: Set Flutter root env
         run: |
-          FLUTTER_PATH=$(which flutter)
-          FLUTTER_SDK=$(dirname $(dirname $FLUTTER_PATH))
-          echo "Flutter SDK path: $FLUTTER_SDK"
+          FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
+          echo "FLUTTER_ROOT=$FLUTTER_SDK" >> $GITHUB_ENV
           echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-          cat android/local.properties
 
-      - name: Flutter pub get
-        run: flutter pub get
+      - run: flutter pub get
 
-      - name: Build APK
-        run: flutter build apk --release
+      - run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
