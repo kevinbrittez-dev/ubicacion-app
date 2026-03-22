@@ -19,6 +19,11 @@ jobs:
         with:
           flutter-version: '3.24.0'
 
+      - name: Create local.properties
+        run: |
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+
       - run: flutter pub get
 
       - run: flutter build apk --release
