@@ -115,6 +115,13 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// ── PANTALLA INICIO ─────────────────────────────────────────────
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
 class _HomeScreenState extends State<HomeScreen> {
   final _ctrl = TextEditingController();
 
@@ -139,6 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('ultima_clave', clave);
+    if (!mounted) return;
     Navigator.push(context,
         MaterialPageRoute(builder: (_) => MapScreen(clave: clave, rol: rol)));
   }
@@ -162,7 +170,6 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 24),
               TextField(
                 controller: _ctrl,
-                obscureText: true,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   labelText: 'Contrasena secreta',
@@ -204,6 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// ── PANTALLA MAPA ───────────────────────────────────────────────
 class MapScreen extends StatefulWidget {
   final String clave;
   final String rol;
@@ -214,7 +222,8 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapCtrl = MapController();
-  LatLng? _ubicacion;
+  LatLng? _miUbicacion;
+  LatLng? _otraUbicacion;
   bool _compartiendo = false;
   late DatabaseReference _ref;
 
@@ -222,26 +231,54 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _ref = FirebaseDatabase.instance.ref('rooms/${widget.clave}');
-    if (widget.rol == 'ver') _escuchar();
+    if (widget.rol == 'ver') {
+      _escuchar();
+    } else {
+      _obtenerMiUbicacion();
+    }
   }
 
+  // En modo VER: escucha la ubicacion del otro
   void _escuchar() {
     _ref.onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null) {
-        final lat = (data['lat'] as num?)?.toDouble();
-        final lng = (data['lng'] as num?)?.toDouble();
-        if (lat != null && lng != null) {
-          setState(() => _ubicacion = LatLng(lat, lng));
-          _mapCtrl.move(_ubicacion!, 16);
-        }
+      final snapshot = event.snapshot;
+      if (!snapshot.exists || snapshot.value == null) return;
+
+      // FIX: manejo correcto del tipo de datos de Firebase
+      final raw = snapshot.value;
+      double? lat;
+      double? lng;
+
+      if (raw is Map) {
+        lat = (raw['lat'] as num?)?.toDouble();
+        lng = (raw['lng'] as num?)?.toDouble();
+      }
+
+      if (lat != null && lng != null && mounted) {
+        setState(() => _otraUbicacion = LatLng(lat!, lng!));
+        _mapCtrl.move(_otraUbicacion!, 16);
       }
     });
   }
 
+  // En modo COMPARTIR: obtener ubicacion propia para mostrar en mapa
+  Future<void> _obtenerMiUbicacion() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+      if (mounted) {
+        setState(() => _miUbicacion = LatLng(pos.latitude, pos.longitude));
+        _mapCtrl.move(_miUbicacion!, 16);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _toggleCompartir() async {
     if (_compartiendo) {
-      setState(() => _compartiendo = false);
+      setState(() {
+        _compartiendo = false;
+        _miUbicacion = null;
+      });
       return;
     }
     bool ok = await Geolocator.isLocationServiceEnabled();
@@ -256,13 +293,15 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
     setState(() => _compartiendo = true);
+
     Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high, distanceFilter: 5),
     ).listen((pos) {
-      if (!_compartiendo) return;
+      if (!_compartiendo || !mounted) return;
       _ref.set({'lat': pos.latitude, 'lng': pos.longitude});
-      setState(() => _ubicacion = LatLng(pos.latitude, pos.longitude));
+      setState(() => _miUbicacion = LatLng(pos.latitude, pos.longitude));
+      _mapCtrl.move(_miUbicacion!, 16);
     });
   }
 
@@ -272,6 +311,12 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final esCompartir = widget.rol == 'compartir';
+
+    // Posicion central del mapa
+    final centroMapa = esCompartir
+        ? (_miUbicacion ?? const LatLng(-25.2867, -57.6470))
+        : (_otraUbicacion ?? const LatLng(-25.2867, -57.6470));
+
     return Scaffold(
       appBar: AppBar(
         title: Text(esCompartir ? 'Compartiendo' : 'Viendo ubicacion'),
@@ -301,7 +346,7 @@ class _MapScreenState extends State<MapScreen> {
           FlutterMap(
             mapController: _mapCtrl,
             options: MapOptions(
-              initialCenter: _ubicacion ?? const LatLng(-25.2867, -57.6470),
+              initialCenter: centroMapa,
               initialZoom: 14,
             ),
             children: [
@@ -309,42 +354,68 @@ class _MapScreenState extends State<MapScreen> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.ubicacion.app',
               ),
-              if (_ubicacion != null)
-                MarkerLayer(markers: [
+              MarkerLayer(markers: [
+                // Pin azul = MI ubicacion (modo compartir)
+                if (esCompartir && _miUbicacion != null)
                   Marker(
-                    point: _ubicacion!,
+                    point: _miUbicacion!,
                     width: 60,
                     height: 60,
-                    child: Icon(
-                        Icons.location_pin,
-                        color: esCompartir ? Colors.blue : Colors.red,
-                        size: 52,
+                    child: const Icon(Icons.location_pin,
+                        color: Colors.blue, size: 52),
                   ),
-                ),
-            ]),
+                // Pin rojo = ubicacion del OTRO (modo ver)
+                if (!esCompartir && _otraUbicacion != null)
+                  Marker(
+                    point: _otraUbicacion!,
+                    width: 60,
+                    height: 60,
+                    child: const Icon(Icons.location_pin,
+                        color: Colors.red, size: 52),
+                  ),
+              ]),
+            ],
           ),
-          if (_ubicacion == null)
+
+          // Mensaje de espera
+          if (esCompartir && _miUbicacion == null && !_compartiendo)
             Center(
               child: Card(
                 elevation: 4,
                 child: Padding(
                   padding: const EdgeInsets.all(18),
-                  child: Text(
-                    esCompartir
-                        ? 'Presiona el boton\npara comenzar'
-                        : 'Esperando ubicacion...\nEl otro debe entrar\ncon la misma clave\ny presionar COMPARTIR',
+                  child: const Text(
+                    'Presiona el boton azul\npara empezar a compartir',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 16),
+                    style: TextStyle(fontSize: 16),
                   ),
                 ),
               ),
             ),
+
+          if (!esCompartir && _otraUbicacion == null)
+            Center(
+              child: Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: const Text(
+                    'Esperando ubicacion...\nEl otro debe entrar\ncon la misma clave\ny presionar COMPARTIR',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+            ),
+
+          // Banner "transmitiendo"
           if (esCompartir && _compartiendo)
             Positioned(
               top: 16, left: 0, right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.blue,
                     borderRadius: BorderRadius.circular(20),
@@ -361,6 +432,32 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
+
+          // Leyenda de colores
+          Positioned(
+            bottom: 90, right: 12,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.location_pin, color: Colors.blue, size: 20),
+                      const SizedBox(width: 4),
+                      const Text('Yo', style: TextStyle(fontSize: 13)),
+                    ]),
+                    Row(children: [
+                      Icon(Icons.location_pin, color: Colors.red, size: 20),
+                      const SizedBox(width: 4),
+                      const Text('El otro', style: TextStyle(fontSize: 13)),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       floatingActionButton: esCompartir
@@ -375,6 +472,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
+// ── PANTALLA CONFIGURACION ──────────────────────────────────────
 class ConfigScreen extends StatefulWidget {
   final String clave;
   const ConfigScreen({super.key, required this.clave});
@@ -486,7 +584,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
             child: SwitchListTile(
               title: const Text('Activar envio automatico',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text('La ubicacion se compartira sola en el horario elegido'),
+              subtitle: const Text(
+                  'La ubicacion se compartira sola en el horario elegido'),
               value: _autoEnabled,
               onChanged: (v) => setState(() => _autoEnabled = v),
             ),
@@ -499,7 +598,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Dias de la semana',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -528,17 +628,20 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Horario',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
                         child: Column(
                           children: [
-                            const Text('Inicio', style: TextStyle(color: Colors.grey)),
+                            const Text('Inicio',
+                                style: TextStyle(color: Colors.grey)),
                             const SizedBox(height: 4),
                             FilledButton(
-                              onPressed: _autoEnabled ? () => _elegirHora(true) : null,
+                              onPressed:
+                                  _autoEnabled ? () => _elegirHora(true) : null,
                               child: Text(_formatHora(_inicio),
                                   style: const TextStyle(fontSize: 22)),
                             ),
@@ -552,11 +655,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
                       Expanded(
                         child: Column(
                           children: [
-                            const Text('Fin', style: TextStyle(color: Colors.grey)),
+                            const Text('Fin',
+                                style: TextStyle(color: Colors.grey)),
                             const SizedBox(height: 4),
                             FilledButton(
-                              onPressed: _autoEnabled ? () => _elegirHora(false) : null,
-                              style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                              onPressed: _autoEnabled
+                                  ? () => _elegirHora(false)
+                                  : null,
+                              style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.green),
                               child: Text(_formatHora(_fin),
                                   style: const TextStyle(fontSize: 22)),
                             ),
@@ -596,12 +703,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
               onPressed: _guardando ? null : _guardar,
               icon: _guardando
                   ? const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.save),
               label: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Text(_guardando ? 'Guardando...' : 'GUARDAR CONFIGURACION',
+                child: Text(
+                    _guardando ? 'Guardando...' : 'GUARDAR CONFIGURACION',
                     style: const TextStyle(fontSize: 15)),
               ),
             ),
