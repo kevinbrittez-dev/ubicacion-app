@@ -315,7 +315,7 @@ class _MapScreenState extends State<MapScreen> {
                     point: _ubicacion!,
                     width: 60,
                     height: 60,
-                    child: const Icon(
+                    child: Icon(
                         Icons.location_pin,
                         color: esCompartir ? Colors.blue : Colors.red,
                         size: 52,
