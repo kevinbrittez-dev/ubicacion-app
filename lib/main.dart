@@ -115,22 +115,30 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
 class _HomeScreenState extends State<HomeScreen> {
   final _ctrl = TextEditingController();
 
-  void _entrar(String rol) {
+  @override
+  void initState() {
+    super.initState();
+    _cargarClave();
+  }
+
+  Future<void> _cargarClave() async {
+    final prefs = await SharedPreferences.getInstance();
+    final clave = prefs.getString('ultima_clave') ?? '';
+    setState(() => _ctrl.text = clave);
+  }
+
+  void _entrar(String rol) async {
     final clave = _ctrl.text.trim();
     if (clave.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Ingresa una contrasena')));
       return;
     }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ultima_clave', clave);
     Navigator.push(context,
         MaterialPageRoute(builder: (_) => MapScreen(clave: clave, rol: rol)));
   }
@@ -307,11 +315,13 @@ class _MapScreenState extends State<MapScreen> {
                     point: _ubicacion!,
                     width: 60,
                     height: 60,
-                    child: const Icon(Icons.location_pin,
-                        color: Colors.red, size: 52),
+                    child: const Icon(
+                        Icons.location_pin,
+                        color: esCompartir ? Colors.blue : Colors.red,
+                        size: 52,
                   ),
-                ]),
-            ],
+                ),
+            ]),
           ),
           if (_ubicacion == null)
             Center(
@@ -322,7 +332,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: Text(
                     esCompartir
                         ? 'Presiona el boton\npara comenzar'
-                        : 'Esperando que el\notro usuario comparta...',
+                        : 'Esperando ubicacion...\nEl otro debe entrar\ncon la misma clave\ny presionar COMPARTIR',
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 16),
                   ),
@@ -376,7 +386,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
   bool _autoEnabled = false;
   final Map<int, String> _nombresDias = {
     1: 'Lunes', 2: 'Martes', 3: 'Miercoles',
-    4: 'Jueves', 5: 'Viernes', 6: 'Sabado',
+    4: 'Jueves', 5: 'Viernes', 6: 'Sabado', 7: 'Domingo',
   };
   final Set<int> _diasSeleccionados = {};
   TimeOfDay _inicio = const TimeOfDay(hour: 22, minute: 0);
