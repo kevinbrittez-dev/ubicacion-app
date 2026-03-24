@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:workmanager/workmanager.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'dart:io';
-import 'package:flutter/services.dart';
 
 final FlutterLocalNotificationsPlugin notifPlugin =
     FlutterLocalNotificationsPlugin();
 
+Future<void> _initNotif() async {
+  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  await notifPlugin
+      .initialize(const InitializationSettings(android: androidInit));
+}
+
 Future<void> mostrarNotif(String titulo, String cuerpo) async {
+  await _initNotif();
   const details = AndroidNotificationDetails(
     'ubicacion_ch', 'Ubicacion automatica',
     channelDescription: 'Avisos de compartir ubicacion',
@@ -24,64 +30,59 @@ Future<void> mostrarNotif(String titulo, String cuerpo) async {
       0, titulo, cuerpo, const NotificationDetails(android: details));
 }
 
+// ── TAREA DEL ALARM MANAGER ─────────────────────────────────────
 @pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    try {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: "AIzaSyCwjNCVAeLvMq_P0eyS36IUORZSOZD_KW0",
-          appId: "1:96664850127:android:0b324e7c26f574cde371ba",
-          messagingSenderId: "96664850127",
-          projectId: "ubicacion-app-21ff2",
-          databaseURL:
-              "https://ubicacion-app-21ff2-default-rtdb.firebaseio.com",
-        ),
-      );
+Future<void> tareaUbicacion() async {
+  try {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AIzaSyCwjNCVAeLvMq_P0eyS36IUORZSOZD_KW0",
+        appId: "1:96664850127:android:0b324e7c26f574cde371ba",
+        messagingSenderId: "96664850127",
+        projectId: "ubicacion-app-21ff2",
+        databaseURL: "https://ubicacion-app-21ff2-default-rtdb.firebaseio.com",
+      ),
+    );
 
-      final prefs = await SharedPreferences.getInstance();
-      final clave = prefs.getString('clave') ?? '';
-      final autoOn = prefs.getBool('auto_enabled') ?? false;
-      if (clave.isEmpty || !autoOn) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final clave = prefs.getString('clave') ?? '';
+    final autoOn = prefs.getBool('auto_enabled') ?? false;
 
-      final now = DateTime.now();
-      final diasGuardados = prefs.getStringList('dias') ?? [];
-      if (!diasGuardados.contains(now.weekday.toString())) return true;
+    if (clave.isEmpty || !autoOn) return;
 
-      final startH = prefs.getInt('inicio_hora') ?? 22;
-      final startM = prefs.getInt('inicio_min') ?? 0;
-      final endH = prefs.getInt('fin_hora') ?? 22;
-      final endM = prefs.getInt('fin_min') ?? 30;
-      final nowMin = now.hour * 60 + now.minute;
-      final startMin = startH * 60 + startM;
-      final endMin = endH * 60 + endM;
+    final now = DateTime.now();
+    final diasGuardados = prefs.getStringList('dias') ?? [];
+    if (!diasGuardados.contains(now.weekday.toString())) return;
 
-      if (nowMin < startMin || nowMin >= endMin) return true;
+    final startH = prefs.getInt('inicio_hora') ?? 22;
+    final startM = prefs.getInt('inicio_min') ?? 0;
+    final endH = prefs.getInt('fin_hora') ?? 22;
+    final endM = prefs.getInt('fin_min') ?? 30;
+    final nowMin = now.hour * 60 + now.minute;
+    final startMin = startH * 60 + startM;
+    final endMin = endH * 60 + endM;
 
-      // ✅ CAMBIO: ahora solo permite si tiene permiso "Todo el tiempo"
-      final perm = await Geolocator.checkPermission();
-      if (perm != LocationPermission.always) return true;
+    if (nowMin < startMin || nowMin >= endMin) return;
 
-      final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) return;
 
-      await FirebaseDatabase.instance
-          .ref('rooms/$clave')
-          .set({'lat': pos.latitude, 'lng': pos.longitude});
+    final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
 
-      const androidInit =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
-      await notifPlugin.initialize(
-          const InitializationSettings(android: androidInit));
-      await mostrarNotif(
-          'Compartiendo ubicacion', 'Envio automatico activo ahora');
-    } catch (e) {
-      debugPrint('Error tarea: $e');
-    }
-    return true;
-  });
+    await FirebaseDatabase.instance
+        .ref('rooms/$clave')
+        .set({'lat': pos.latitude, 'lng': pos.longitude});
+
+    await mostrarNotif(
+        'Compartiendo ubicacion', 'Envio automatico activo');
+  } catch (e) {
+    debugPrint('Error tarea: $e');
+  }
 }
 
+// ── MAIN ─────────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -95,11 +96,8 @@ void main() async {
     ),
   );
 
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-  await notifPlugin
-      .initialize(const InitializationSettings(android: androidInit));
-
-  await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+  await _initNotif();
+  await AndroidAlarmManager.initialize();
 
   runApp(const MyApp());
 }
@@ -117,6 +115,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// ── PANTALLA INICIO ──────────────────────────────────────────────
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -134,8 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _cargarClave() async {
     final prefs = await SharedPreferences.getInstance();
-    final clave = prefs.getString('ultima_clave') ?? '';
-    setState(() => _ctrl.text = clave);
+    setState(() => _ctrl.text = prefs.getString('ultima_clave') ?? '');
   }
 
   void _entrar(String rol) async {
@@ -212,6 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// ── PANTALLA MAPA ────────────────────────────────────────────────
 class MapScreen extends StatefulWidget {
   final String clave;
   final String rol;
@@ -269,10 +268,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _toggleCompartir() async {
     if (_compartiendo) {
-      setState(() {
-        _compartiendo = false;
-        _miUbicacion = null;
-      });
+      setState(() { _compartiendo = false; _miUbicacion = null; });
       return;
     }
     bool ok = await Geolocator.isLocationServiceEnabled();
@@ -316,11 +312,9 @@ class _MapScreenState extends State<MapScreen> {
             IconButton(
               icon: const Icon(Icons.schedule),
               tooltip: 'Programar horario',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => ConfigScreen(clave: widget.clave)),
-              ),
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(
+                      builder: (_) => ConfigScreen(clave: widget.clave))),
             ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -346,16 +340,14 @@ class _MapScreenState extends State<MapScreen> {
                 if (esCompartir && _miUbicacion != null)
                   Marker(
                     point: _miUbicacion!,
-                    width: 60,
-                    height: 60,
+                    width: 60, height: 60,
                     child: const Icon(Icons.location_pin,
                         color: Colors.blue, size: 52),
                   ),
                 if (!esCompartir && _otraUbicacion != null)
                   Marker(
                     point: _otraUbicacion!,
-                    width: 60,
-                    height: 60,
+                    width: 60, height: 60,
                     child: const Icon(Icons.location_pin,
                         color: Colors.red, size: 52),
                   ),
@@ -363,79 +355,45 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ),
           if (esCompartir && _miUbicacion == null && !_compartiendo)
-            const Center(
-              child: Card(
-                elevation: 4,
-                child: Padding(
-                  padding: EdgeInsets.all(18),
-                  child: Text(
-                    'Presiona el boton azul\npara empezar a compartir',
+            const Center(child: Card(elevation: 4,
+              child: Padding(padding: EdgeInsets.all(18),
+                child: Text('Presiona el boton azul\npara empezar a compartir',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            ),
+                    style: TextStyle(fontSize: 16))))),
           if (!esCompartir && _otraUbicacion == null)
-            const Center(
-              child: Card(
-                elevation: 4,
-                child: Padding(
-                  padding: EdgeInsets.all(18),
-                  child: Text(
-                    'Esperando ubicacion...\nEl otro debe entrar\ncon la misma clave\ny presionar COMPARTIR',
+            const Center(child: Card(elevation: 4,
+              child: Padding(padding: EdgeInsets.all(18),
+                child: Text('Esperando ubicacion...\nEl otro debe entrar\ncon la misma clave\ny presionar COMPARTIR',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            ),
+                    style: TextStyle(fontSize: 16))))),
           if (esCompartir && _compartiendo)
-            Positioned(
-              top: 16, left: 0, right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.wifi_tethering, color: Colors.white),
-                      SizedBox(width: 8),
-                      Text('Transmitiendo en vivo',
-                          style: TextStyle(color: Colors.white)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          Positioned(
-            bottom: 90, right: 12,
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Row(children: [
-                      Icon(Icons.location_pin, color: Colors.blue, size: 20),
-                      SizedBox(width: 4),
-                      Text('Yo', style: TextStyle(fontSize: 13)),
-                    ]),
-                    Row(children: [
-                      Icon(Icons.location_pin, color: Colors.red, size: 20),
-                      SizedBox(width: 4),
-                      Text('El otro', style: TextStyle(fontSize: 13)),
-                    ]),
-                  ],
-                ),
-              ),
-            ),
-          ),
+            Positioned(top: 16, left: 0, right: 0,
+              child: Center(child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(color: Colors.blue,
+                    borderRadius: BorderRadius.circular(20)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.wifi_tethering, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Transmitiendo en vivo',
+                      style: TextStyle(color: Colors.white)),
+                ])))),
+          Positioned(bottom: 90, right: 12,
+            child: Card(child: Padding(padding: const EdgeInsets.all(8),
+              child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Row(children: [
+                    Icon(Icons.location_pin, color: Colors.blue, size: 20),
+                    SizedBox(width: 4),
+                    Text('Yo', style: TextStyle(fontSize: 13)),
+                  ]),
+                  Row(children: [
+                    Icon(Icons.location_pin, color: Colors.red, size: 20),
+                    SizedBox(width: 4),
+                    Text('El otro', style: TextStyle(fontSize: 13)),
+                  ]),
+                ])))),
         ],
       ),
       floatingActionButton: esCompartir
@@ -450,6 +408,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
+// ── PANTALLA CONFIGURACION ───────────────────────────────────────
 class ConfigScreen extends StatefulWidget {
   final String clave;
   const ConfigScreen({super.key, required this.clave});
@@ -471,48 +430,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   static const _platform = MethodChannel('com.ubicacion.app/battery');
 
-  // ✅ NUEVO MÉTODO: verifica y pide permiso "Todo el tiempo"
-  Future<bool> _ensureBackgroundPermission() async {
-    var perm = await Geolocator.checkPermission();
-
-    if (perm == LocationPermission.denied) {
-      perm = await Geolocator.requestPermission();
-    }
-
-    // Si está en "Mientras usas la app" → pedimos que lo cambie a "Todo el tiempo"
-    if (perm == LocationPermission.whileInUse || perm == LocationPermission.denied) {
-      final abrirSettings = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Permiso de background requerido'),
-          content: const Text(
-            'Para que la ubicación se envíe automáticamente (incluso con la pantalla apagada)\n'
-            'necesitas elegir "Permitir todo el tiempo".\n\n'
-            '¿Abrir ajustes de la app ahora?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Abrir ajustes'),
-            ),
-          ],
-        ),
-      );
-
-      if (abrirSettings == true) {
-        await Geolocator.openAppSettings();
-        await Future.delayed(const Duration(seconds: 2));
-        perm = await Geolocator.checkPermission();
-      }
-    }
-
-    return perm == LocationPermission.always;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -522,7 +439,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   Future<void> _verificarBateria() async {
     try {
-      final bool exenta = await _platform.invokeMethod('isIgnoringBatteryOptimizations');
+      final bool exenta =
+          await _platform.invokeMethod('isIgnoringBatteryOptimizations');
       setState(() => _bateriaExenta = exenta);
     } catch (_) {}
   }
@@ -553,20 +471,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
   }
 
   Future<void> _guardar() async {
-    // ✅ NUEVA VALIDACIÓN: si activa automático, debe tener permiso always
-    if (_autoEnabled) {
-      final perm = await Geolocator.checkPermission();
-      if (perm != LocationPermission.always) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ Permiso background no concedido'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
     if (_diasSeleccionados.isEmpty && _autoEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Selecciona al menos un dia')));
@@ -583,15 +487,19 @@ class _ConfigScreenState extends State<ConfigScreen> {
     await prefs.setInt('fin_hora', _fin.hour);
     await prefs.setInt('fin_min', _fin.minute);
 
-    await Workmanager().cancelAll();
+    // Cancelar alarmas anteriores
+    await AndroidAlarmManager.cancel(42);
 
     if (_autoEnabled) {
-      await Workmanager().registerPeriodicTask(
-        'ubicacion_auto',
-        'ubicacion_automatica',
-        frequency: const Duration(minutes: 15),
-        constraints: Constraints(networkType: NetworkType.connected),
-        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+      // Programar alarma exacta cada minuto durante el dia
+      // La tarea verifica internamente si esta en el horario correcto
+      await AndroidAlarmManager.periodic(
+        const Duration(minutes: 1),
+        42,
+        tareaUbicacion,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
       );
       await mostrarNotif(
         'Horario guardado',
@@ -632,7 +540,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // ── AVISO BATERIA ──
           if (!_bateriaExenta)
             Card(
               color: Colors.orange.shade50,
@@ -644,15 +551,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
                     const Row(children: [
                       Icon(Icons.battery_alert, color: Colors.orange),
                       SizedBox(width: 8),
-                      Text('Optimizacion de bateria activa',
+                      Text('Paso necesario para que funcione',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.orange)),
                     ]),
                     const SizedBox(height: 6),
                     const Text(
-                      'Android puede bloquear el envio automatico. '
-                      'Desactiva la optimizacion de bateria para esta app.',
+                      'Desactiva la restriccion de bateria para que '
+                      'la app pueda enviar la ubicacion automaticamente.',
                       style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 8),
@@ -661,15 +568,13 @@ class _ConfigScreenState extends State<ConfigScreen> {
                       style: FilledButton.styleFrom(
                           backgroundColor: Colors.orange),
                       icon: const Icon(Icons.battery_charging_full),
-                      label: const Text('Desactivar restriccion'),
+                      label: const Text('Desactivar restriccion de bateria'),
                     ),
                   ],
                 ),
               ),
             ),
-
           if (!_bateriaExenta) const SizedBox(height: 12),
-
           if (_bateriaExenta)
             Card(
               color: Colors.green.shade50,
@@ -679,37 +584,20 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   Icon(Icons.check_circle, color: Colors.green),
                   SizedBox(width: 8),
                   Text('Bateria configurada correctamente',
-                      style: TextStyle(color: Colors.green,
-                          fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          color: Colors.green, fontWeight: FontWeight.bold)),
                 ]),
               ),
             ),
-
           if (_bateriaExenta) const SizedBox(height: 12),
-
           Card(
             child: SwitchListTile(
               title: const Text('Activar envio automatico',
                   style: TextStyle(fontWeight: FontWeight.bold)),
               subtitle: const Text(
-                  'La ubicación se compartira sola en el horario elegido'),
+                  'La ubicacion se compartira sola en el horario elegido'),
               value: _autoEnabled,
-              onChanged: (v) async {
-                setState(() => _autoEnabled = v);
-
-                if (v) {
-                  final tienePermiso = await _ensureBackgroundPermission();
-                  if (!tienePermiso) {
-                    setState(() => _autoEnabled = false);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('❌ Se necesita permiso "Todo el tiempo"'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
+              onChanged: (v) => setState(() => _autoEnabled = v),
             ),
           ),
           const SizedBox(height: 16),
@@ -756,42 +644,36 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Column(
-                          children: [
-                            const Text('Inicio',
-                                style: TextStyle(color: Colors.grey)),
-                            const SizedBox(height: 4),
-                            FilledButton(
-                              onPressed: _autoEnabled
-                                  ? () => _elegirHora(true)
-                                  : null,
-                              child: Text(_formatHora(_inicio),
-                                  style: const TextStyle(fontSize: 22)),
-                            ),
-                          ],
-                        ),
+                        child: Column(children: [
+                          const Text('Inicio',
+                              style: TextStyle(color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          FilledButton(
+                            onPressed:
+                                _autoEnabled ? () => _elegirHora(true) : null,
+                            child: Text(_formatHora(_inicio),
+                                style: const TextStyle(fontSize: 22)),
+                          ),
+                        ]),
                       ),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 12),
                         child: Text('a', style: TextStyle(fontSize: 24)),
                       ),
                       Expanded(
-                        child: Column(
-                          children: [
-                            const Text('Fin',
-                                style: TextStyle(color: Colors.grey)),
-                            const SizedBox(height: 4),
-                            FilledButton(
-                              onPressed: _autoEnabled
-                                  ? () => _elegirHora(false)
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.green),
-                              child: Text(_formatHora(_fin),
-                                  style: const TextStyle(fontSize: 22)),
-                            ),
-                          ],
-                        ),
+                        child: Column(children: [
+                          const Text('Fin',
+                              style: TextStyle(color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          FilledButton(
+                            onPressed:
+                                _autoEnabled ? () => _elegirHora(false) : null,
+                            style: FilledButton.styleFrom(
+                                backgroundColor: Colors.green),
+                            child: Text(_formatHora(_fin),
+                                style: const TextStyle(fontSize: 22)),
+                          ),
+                        ]),
                       ),
                     ],
                   ),
@@ -806,19 +688,17 @@ class _ConfigScreenState extends State<ConfigScreen> {
               color: const Color.fromRGBO(33, 150, 243, 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'El envio automatico se activa cada 15 minutos aprox. '
-                    'Para mayor confiabilidad desactiva la restriccion de bateria.',
-                    style: TextStyle(fontSize: 13, color: Colors.blue),
-                  ),
+            child: const Row(children: [
+              Icon(Icons.info_outline, color: Colors.blue, size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'La ubicacion se enviara cada minuto durante el horario programado. '
+                  'Asegurate de desactivar la restriccion de bateria.',
+                  style: TextStyle(fontSize: 13, color: Colors.blue),
                 ),
-              ],
-            ),
+              ),
+            ]),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -827,8 +707,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
               onPressed: _guardando ? null : _guardar,
               icon: _guardando
                   ? const SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 20, height: 20,
                       child: CircularProgressIndicator(
                           color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.save),
