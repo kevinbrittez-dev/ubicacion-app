@@ -13,22 +13,23 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "isIgnoringBatteryOptimizations" -> {
-                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                    result.success(pm.isIgnoringBatteryOptimizations(packageName))
-                }
-                "requestIgnoreBatteryOptimizations" -> {
-                    val intent = Intent().apply {
-                        action = android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                        data = Uri.parse("package:$packageName")
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isIgnoringBatteryOptimizations" -> {
+                        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                        result.success(pm.isIgnoringBatteryOptimizations(packageName))
                     }
-                    startActivity(intent)
-                    result.success(null)
+                    "requestIgnoreBatteryOptimizations" -> {
+                        val intent = Intent().apply {
+                            action = android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
                 }
-                else -> result.notImplemented()
             }
-        }
     }
 }
