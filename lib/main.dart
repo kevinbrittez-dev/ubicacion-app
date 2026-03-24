@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'dart:io';
+import 'package:flutter/services.dart';
 
 final FlutterLocalNotificationsPlugin notifPlugin =
     FlutterLocalNotificationsPlugin();
@@ -115,7 +117,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ── PANTALLA INICIO ─────────────────────────────────────────────
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -211,7 +212,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ── PANTALLA MAPA ───────────────────────────────────────────────
 class MapScreen extends StatefulWidget {
   final String clave;
   final String rol;
@@ -238,22 +238,17 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // En modo VER: escucha la ubicacion del otro
   void _escuchar() {
     _ref.onValue.listen((event) {
       final snapshot = event.snapshot;
       if (!snapshot.exists || snapshot.value == null) return;
-
-      // FIX: manejo correcto del tipo de datos de Firebase
       final raw = snapshot.value;
       double? lat;
       double? lng;
-
       if (raw is Map) {
         lat = (raw['lat'] as num?)?.toDouble();
         lng = (raw['lng'] as num?)?.toDouble();
       }
-
       if (lat != null && lng != null && mounted) {
         setState(() => _otraUbicacion = LatLng(lat!, lng!));
         _mapCtrl.move(_otraUbicacion!, 16);
@@ -261,7 +256,6 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // En modo COMPARTIR: obtener ubicacion propia para mostrar en mapa
   Future<void> _obtenerMiUbicacion() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -293,7 +287,6 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
     setState(() => _compartiendo = true);
-
     Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high, distanceFilter: 5),
@@ -311,8 +304,6 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final esCompartir = widget.rol == 'compartir';
-
-    // Posicion central del mapa
     final centroMapa = esCompartir
         ? (_miUbicacion ?? const LatLng(-25.2867, -57.6470))
         : (_otraUbicacion ?? const LatLng(-25.2867, -57.6470));
@@ -345,17 +336,13 @@ class _MapScreenState extends State<MapScreen> {
         children: [
           FlutterMap(
             mapController: _mapCtrl,
-            options: MapOptions(
-              initialCenter: centroMapa,
-              initialZoom: 14,
-            ),
+            options: MapOptions(initialCenter: centroMapa, initialZoom: 14),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.ubicacion.app',
               ),
               MarkerLayer(markers: [
-                // Pin azul = MI ubicacion (modo compartir)
                 if (esCompartir && _miUbicacion != null)
                   Marker(
                     point: _miUbicacion!,
@@ -364,7 +351,6 @@ class _MapScreenState extends State<MapScreen> {
                     child: const Icon(Icons.location_pin,
                         color: Colors.blue, size: 52),
                   ),
-                // Pin rojo = ubicacion del OTRO (modo ver)
                 if (!esCompartir && _otraUbicacion != null)
                   Marker(
                     point: _otraUbicacion!,
@@ -376,15 +362,13 @@ class _MapScreenState extends State<MapScreen> {
               ]),
             ],
           ),
-
-          // Mensaje de espera
           if (esCompartir && _miUbicacion == null && !_compartiendo)
-            Center(
+            const Center(
               child: Card(
                 elevation: 4,
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: const Text(
+                  padding: EdgeInsets.all(18),
+                  child: Text(
                     'Presiona el boton azul\npara empezar a compartir',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 16),
@@ -392,14 +376,13 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
-
           if (!esCompartir && _otraUbicacion == null)
-            Center(
+            const Center(
               child: Card(
                 elevation: 4,
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: const Text(
+                  padding: EdgeInsets.all(18),
+                  child: Text(
                     'Esperando ubicacion...\nEl otro debe entrar\ncon la misma clave\ny presionar COMPARTIR',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 16),
@@ -407,15 +390,12 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
-
-          // Banner "transmitiendo"
           if (esCompartir && _compartiendo)
             Positioned(
               top: 16, left: 0, right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.blue,
                     borderRadius: BorderRadius.circular(20),
@@ -432,8 +412,6 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
-
-          // Leyenda de colores
           Positioned(
             bottom: 90, right: 12,
             child: Card(
@@ -442,16 +420,16 @@ class _MapScreenState extends State<MapScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  children: const [
                     Row(children: [
                       Icon(Icons.location_pin, color: Colors.blue, size: 20),
-                      const SizedBox(width: 4),
-                      const Text('Yo', style: TextStyle(fontSize: 13)),
+                      SizedBox(width: 4),
+                      Text('Yo', style: TextStyle(fontSize: 13)),
                     ]),
                     Row(children: [
                       Icon(Icons.location_pin, color: Colors.red, size: 20),
-                      const SizedBox(width: 4),
-                      const Text('El otro', style: TextStyle(fontSize: 13)),
+                      SizedBox(width: 4),
+                      Text('El otro', style: TextStyle(fontSize: 13)),
                     ]),
                   ],
                 ),
@@ -472,7 +450,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
-// ── PANTALLA CONFIGURACION ──────────────────────────────────────
 class ConfigScreen extends StatefulWidget {
   final String clave;
   const ConfigScreen({super.key, required this.clave});
@@ -490,11 +467,30 @@ class _ConfigScreenState extends State<ConfigScreen> {
   TimeOfDay _inicio = const TimeOfDay(hour: 22, minute: 0);
   TimeOfDay _fin = const TimeOfDay(hour: 22, minute: 30);
   bool _guardando = false;
+  bool _bateriaExenta = false;
+
+  static const _platform = MethodChannel('com.ubicacion.app/battery');
 
   @override
   void initState() {
     super.initState();
     _cargarConfig();
+    _verificarBateria();
+  }
+
+  Future<void> _verificarBateria() async {
+    try {
+      final bool exenta = await _platform.invokeMethod('isIgnoringBatteryOptimizations');
+      setState(() => _bateriaExenta = exenta);
+    } catch (_) {}
+  }
+
+  Future<void> _solicitarExencionBateria() async {
+    try {
+      await _platform.invokeMethod('requestIgnoreBatteryOptimizations');
+      await Future.delayed(const Duration(seconds: 2));
+      await _verificarBateria();
+    } catch (_) {}
   }
 
   Future<void> _cargarConfig() async {
@@ -580,6 +576,62 @@ class _ConfigScreenState extends State<ConfigScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+
+          // ── AVISO BATERIA ──
+          if (!_bateriaExenta)
+            Card(
+              color: Colors.orange.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(children: [
+                      Icon(Icons.battery_alert, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text('Optimizacion de bateria activa',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange)),
+                    ]),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Android puede bloquear el envio automatico. '
+                      'Desactiva la optimizacion de bateria para esta app.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: _solicitarExencionBateria,
+                      style: FilledButton.styleFrom(
+                          backgroundColor: Colors.orange),
+                      icon: const Icon(Icons.battery_charging_full),
+                      label: const Text('Desactivar restriccion'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          if (!_bateriaExenta) const SizedBox(height: 12),
+
+          if (_bateriaExenta)
+            Card(
+              color: Colors.green.shade50,
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Row(children: [
+                  Icon(Icons.check_circle, color: Colors.green),
+                  SizedBox(width: 8),
+                  Text('Bateria configurada correctamente',
+                      style: TextStyle(color: Colors.green,
+                          fontWeight: FontWeight.bold)),
+                ]),
+              ),
+            ),
+
+          if (_bateriaExenta) const SizedBox(height: 12),
+
           Card(
             child: SwitchListTile(
               title: const Text('Activar envio automatico',
@@ -640,8 +692,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
                                 style: TextStyle(color: Colors.grey)),
                             const SizedBox(height: 4),
                             FilledButton(
-                              onPressed:
-                                  _autoEnabled ? () => _elegirHora(true) : null,
+                              onPressed: _autoEnabled
+                                  ? () => _elegirHora(true)
+                                  : null,
                               child: Text(_formatHora(_inicio),
                                   style: const TextStyle(fontSize: 22)),
                             ),
@@ -680,7 +733,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Color.fromRGBO(33, 150, 243, 0.1),
+              color: const Color.fromRGBO(33, 150, 243, 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
@@ -689,7 +742,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'El envio automatico se activa cada 15 minutos. El telefono debe tener GPS e internet encendidos.',
+                    'El envio automatico se activa cada 15 minutos aprox. '
+                    'Para mayor confiabilidad desactiva la restriccion de bateria.',
                     style: TextStyle(fontSize: 13, color: Colors.blue),
                   ),
                 ),
