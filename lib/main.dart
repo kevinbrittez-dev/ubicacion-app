@@ -58,9 +58,9 @@ void callbackDispatcher() {
 
       if (nowMin < startMin || nowMin >= endMin) return true;
 
+      // ✅ CAMBIO: ahora solo permite si tiene permiso "Todo el tiempo"
       final perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) return true;
+      if (perm != LocationPermission.always) return true;
 
       final pos = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high);
@@ -471,6 +471,48 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   static const _platform = MethodChannel('com.ubicacion.app/battery');
 
+  // ✅ NUEVO MÉTODO: verifica y pide permiso "Todo el tiempo"
+  Future<bool> _ensureBackgroundPermission() async {
+    var perm = await Geolocator.checkPermission();
+
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+
+    // Si está en "Mientras usas la app" → pedimos que lo cambie a "Todo el tiempo"
+    if (perm == LocationPermission.whileInUse || perm == LocationPermission.denied) {
+      final abrirSettings = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Permiso de background requerido'),
+          content: const Text(
+            'Para que la ubicación se envíe automáticamente (incluso con la pantalla apagada)\n'
+            'necesitas elegir "Permitir todo el tiempo".\n\n'
+            '¿Abrir ajustes de la app ahora?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Abrir ajustes'),
+            ),
+          ],
+        ),
+      );
+
+      if (abrirSettings == true) {
+        await Geolocator.openAppSettings();
+        await Future.delayed(const Duration(seconds: 2));
+        perm = await Geolocator.checkPermission();
+      }
+    }
+
+    return perm == LocationPermission.always;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -511,6 +553,20 @@ class _ConfigScreenState extends State<ConfigScreen> {
   }
 
   Future<void> _guardar() async {
+    // ✅ NUEVA VALIDACIÓN: si activa automático, debe tener permiso always
+    if (_autoEnabled) {
+      final perm = await Geolocator.checkPermission();
+      if (perm != LocationPermission.always) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Permiso background no concedido'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     if (_diasSeleccionados.isEmpty && _autoEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Selecciona al menos un dia')));
@@ -576,7 +632,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-
           // ── AVISO BATERIA ──
           if (!_bateriaExenta)
             Card(
@@ -637,9 +692,24 @@ class _ConfigScreenState extends State<ConfigScreen> {
               title: const Text('Activar envio automatico',
                   style: TextStyle(fontWeight: FontWeight.bold)),
               subtitle: const Text(
-                  'La ubicacion se compartira sola en el horario elegido'),
+                  'La ubicación se compartira sola en el horario elegido'),
               value: _autoEnabled,
-              onChanged: (v) => setState(() => _autoEnabled = v),
+              onChanged: (v) async {
+                setState(() => _autoEnabled = v);
+
+                if (v) {
+                  final tienePermiso = await _ensureBackgroundPermission();
+                  if (!tienePermiso) {
+                    setState(() => _autoEnabled = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('❌ Se necesita permiso "Todo el tiempo"'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
             ),
           ),
           const SizedBox(height: 16),
