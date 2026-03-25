@@ -1,2 +1,16 @@
-// Este archivo queda completamente vacío
-// Flutter maneja todo a través de settings.gradle.kts y el plugin loader
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.1")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
