@@ -8,7 +8,6 @@ plugins {
 android {
     namespace = "com.ubicacion.app"
     compileSdk = 36
-    val flutterRoot = properties["flutter.sdk"] as String? ?: System.getenv("FLUTTER_ROOT") ?: ""
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -40,7 +39,7 @@ flutter {
     source = "../.."
 }
 
-apply(from = "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle")
+dependencies {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
