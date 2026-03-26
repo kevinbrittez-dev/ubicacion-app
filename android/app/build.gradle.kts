@@ -1,13 +1,13 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.ubicacion.app"
     compileSdk = 36
+    val flutterRoot = properties["flutter.sdk"] as String? ?: System.getenv("FLUTTER_ROOT") ?: ""
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -38,6 +38,8 @@ android {
 flutter {
     source = "../.."
 }
+
+apply(from = "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle")
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
