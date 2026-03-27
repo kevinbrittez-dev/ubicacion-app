@@ -38,7 +38,13 @@
             android:name="flutterEmbedding"
             android:value="2"/>
         <receiver
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver"
+            android:name="androidx.work.impl.background.systemalarm.RescheduleReceiver"
+            android:exported="false"/>
+        <receiver
+            android:name="dev.fluttercommunity.workmanager.BackgroundWorker"
+            android:exported="false"/>
+        <service
+            android:name="dev.fluttercommunity.workmanager.WorkManagerTaskExecutor"
             android:exported="false"/>
         <service
             android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
